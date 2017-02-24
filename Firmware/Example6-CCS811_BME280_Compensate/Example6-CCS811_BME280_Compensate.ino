@@ -14,7 +14,7 @@
   GND = GND
   SDA = A4
   SCL = A5
-  WAKE = D5 - Optional, can be left unconnected
+  WAKE = D2
 
   Serial.print it out at 9600 baud to serial monitor.
 */
@@ -41,7 +41,7 @@
 #define CSS811_SW_RESET 0xFF
 
 #define CCS811_ADDR 0x5B //7-bit unshifted default I2C Address
-#define WAKE 2 //!Wake on breakout connected to pin 5 on Arduino
+#define WAKE 2 //!Wake on breakout connected to pin 2 on Arduino
 
 //These are the air quality values obtained from the sensor
 unsigned int tVOC = 0;
@@ -90,7 +90,10 @@ void setup()
   if(result < 0x100) Serial.print("0");
   if(result < 0x10) Serial.print("0");
   Serial.println(result, HEX);
+  Serial.println();
 
+
+  checkEnvReg();
 }
 //---------------------------------------------------------------
 void loop()
@@ -98,9 +101,8 @@ void loop()
   if (dataAvailable())
   {
     readAlgorithmResults(); //Calling this function updates the global tVOC and CO2 variables
-    getWeather();
     printInfoSerial();
-
+    checkEnvReg();
   }
   else if (checkForError())
   {
@@ -110,18 +112,62 @@ void loop()
   delay(2000); //Wait for next reading
 }
 //---------------------------------------------------------------
-void getWeather()
+void checkEnvReg()
 {
-  //Measure the Barometer temperature in F from the BME280
-  tempf = mySensor.readTempF();
+  Serial.print("Envoronmental Register Initial Reading:");
+  //Serial.println(readRegister(CSS811_ENV_DATA), HEX);
 
-  //Measure Pressure from the BME280
-  float pascals = mySensor.readFloatPressure();
-  pressureInHg = pascals * 0.0002953; // Calc for converting Pa to inHg
+  Wire.beginTransmission(CCS811_ADDR);
+  Wire.write(CSS811_ENV_DATA);
+  Wire.endTransmission();
 
-  // Measure Relative Humidity from the BME280
-  humidity = mySensor.readFloatHumidity();
+  Wire.requestFrom(CCS811_ADDR, 4); //Get four bytes
+
+  byte co2MSB = Wire.read();
+  byte co2LSB = Wire.read();
+  byte tvocMSB = Wire.read();
+  byte tvocLSB = Wire.read();
+
+  unsigned int temp = ((unsigned int)co2MSB << 8) | co2LSB;
+  unsigned int humid = ((unsigned int)tvocMSB << 8) | tvocLSB;
+
+  Serial.print("TempByte: ");
+  Serial.print(temp, HEX);
+  Serial.print("  HumidityByte: ");
+  Serial.println(humid, HEX);
+  Serial.println();
+  Serial.println();
   
+  delay(10);
+  
+  float BMEtempC = mySensor.readTempC();
+  float BMEhumid = mySensor.readFloatHumidity();
+  
+  setEnvironmentalData(BMEhumid, BMEtempC);
+
+  Serial.print("Envoronmental Register Post Reading:");
+  //Serial.println(readRegister(CSS811_ENV_DATA), HEX);
+
+  Wire.beginTransmission(CCS811_ADDR);
+  Wire.write(CSS811_ENV_DATA);
+  Wire.endTransmission();
+
+  Wire.requestFrom(CCS811_ADDR, 4); //Get four bytes
+
+  co2MSB = Wire.read();
+  co2LSB = Wire.read();
+  tvocMSB = Wire.read();
+  tvocLSB = Wire.read();
+  
+  temp = ((unsigned int)co2MSB << 8) | co2LSB;
+  humid = ((unsigned int)tvocMSB << 8) | tvocLSB;
+  
+  Serial.print("TempByte: ");
+  Serial.print(temp, HEX);
+  Serial.print("  HumidityByte: ");
+  Serial.println(humid, HEX);
+  Serial.println();
+  Serial.println();
 }
 //---------------------------------------------------------------
 void printInfoSerial()
@@ -331,6 +377,7 @@ void setDriveMode(byte mode)
   setting |= (mode << 4); //Mask in mode
   writeRegister(CSS811_MEAS_MODE, setting);
 }
+  /*
 //---------------------------------------------------------------
 //Given a temp and humidity, write this data to the CSS811 for better compensation
 //This function expects the humidity and temp to come in as floats
@@ -365,6 +412,31 @@ void setEnvironmentalData(float relativeHumidity, float temperature)
   Wire.write(envData[2]);
   Wire.write(envData[3]);
 }
+   */
+void setEnvironmentalData(float t, float rh)    // compensate for temperature and relative humidity
+{
+  digitalWrite(WAKE, LOW);
+
+  int _temp, _rh;
+  if(t>0)
+    _temp = (int)t + 0.5;  // this will round off the floating point to the nearest integer value
+  else if(t<0)
+    _temp = (int)t - 0.5;
+  _temp = _temp + 25;  // temperature high byte is stored as T+25°C so the value of byte is positive
+  _rh = (int)rh + 0.5;  // this will round off the floating point to the nearest integer value
+
+  Wire.beginTransmission(CCS811_ADDR);
+  Wire.write(CSS811_ENV_DATA);
+  Wire.write(_rh);           // 7 bit humidity value
+  Wire.write(0);            // most significant fractional bit. Using 0 here - gives us accuracy of +/-1%. Current firmware (2016) only supports fractional increments of 0.5
+  Wire.write(_temp);
+  Wire.write(0);
+  Wire.endTransmission();
+
+  digitalWrite(WAKE, HIGH);
+}
+
+
 //---------------------------------------------------------------
 //Reads from a give location from the CSS811
 byte readRegister(byte addr)
