@@ -50,6 +50,11 @@ float tempf = 0;
 float humidity = 0;
 float pressureInHg = 0;
 
+
+  float BMEtempC = 0;
+  float BMEhumid = 0;
+
+  
 //Global sensor object
 BME280 mySensor;
 //---------------------------------------------------------------
@@ -92,7 +97,7 @@ void setup()
   Serial.println(result, HEX);
   Serial.println();
 
-
+  Serial.print("Envoronmental Register Initial Reading:");
   checkEnvReg();
 }
 //---------------------------------------------------------------
@@ -102,6 +107,17 @@ void loop()
   {
     readAlgorithmResults(); //Calling this function updates the global tVOC and CO2 variables
     printInfoSerial();
+
+  BMEtempC = mySensor.readTempC();
+  BMEhumid = mySensor.readFloatHumidity();
+
+  Serial.print("BME Readings:");
+  Serial.print(BMEtempC);
+  Serial.print(",");
+  Serial.println(BMEhumid);
+
+
+    setEnvironmentalData(BMEhumid, BMEtempC);
     checkEnvReg();
   }
   else if (checkForError())
@@ -114,8 +130,7 @@ void loop()
 //---------------------------------------------------------------
 void checkEnvReg()
 {
-  Serial.print("Envoronmental Register Initial Reading:");
-  //Serial.println(readRegister(CSS811_ENV_DATA), HEX);
+
 
   Wire.beginTransmission(CCS811_ADDR);
   Wire.write(CSS811_ENV_DATA);
@@ -123,50 +138,18 @@ void checkEnvReg()
 
   Wire.requestFrom(CCS811_ADDR, 4); //Get four bytes
 
-  byte co2MSB = Wire.read();
-  byte co2LSB = Wire.read();
-  byte tvocMSB = Wire.read();
-  byte tvocLSB = Wire.read();
+  byte tempMSB = Wire.read();
+  byte tempLSB = Wire.read();
+  byte humMSB = Wire.read();
+  byte humLSB = Wire.read();
 
-  unsigned int temp = ((unsigned int)co2MSB << 8) | co2LSB;
-  unsigned int humid = ((unsigned int)tvocMSB << 8) | tvocLSB;
+  unsigned int temp = ((unsigned int)tempMSB << 8) | tempLSB;
+  unsigned int humid = ((unsigned int)humMSB << 8) | humLSB;
 
   Serial.print("TempByte: ");
   Serial.print(temp, HEX);
   Serial.print("  HumidityByte: ");
   Serial.println(humid, HEX);
-  Serial.println();
-  Serial.println();
-  
-  delay(10);
-  
-  float BMEtempC = mySensor.readTempC();
-  float BMEhumid = mySensor.readFloatHumidity();
-  
-  setEnvironmentalData(BMEhumid, BMEtempC);
-
-  Serial.print("Envoronmental Register Post Reading:");
-  //Serial.println(readRegister(CSS811_ENV_DATA), HEX);
-
-  Wire.beginTransmission(CCS811_ADDR);
-  Wire.write(CSS811_ENV_DATA);
-  Wire.endTransmission();
-
-  Wire.requestFrom(CCS811_ADDR, 4); //Get four bytes
-
-  co2MSB = Wire.read();
-  co2LSB = Wire.read();
-  tvocMSB = Wire.read();
-  tvocLSB = Wire.read();
-  
-  temp = ((unsigned int)co2MSB << 8) | co2LSB;
-  humid = ((unsigned int)tvocMSB << 8) | tvocLSB;
-  
-  Serial.print("TempByte: ");
-  Serial.print(temp, HEX);
-  Serial.print("  HumidityByte: ");
-  Serial.println(humid, HEX);
-  Serial.println();
   Serial.println();
 }
 //---------------------------------------------------------------
@@ -377,7 +360,7 @@ void setDriveMode(byte mode)
   setting |= (mode << 4); //Mask in mode
   writeRegister(CSS811_MEAS_MODE, setting);
 }
-  /*
+     /*
 //---------------------------------------------------------------
 //Given a temp and humidity, write this data to the CSS811 for better compensation
 //This function expects the humidity and temp to come in as floats
@@ -404,7 +387,13 @@ void setEnvironmentalData(float relativeHumidity, float temperature)
   {
     envData[2] |= 1;  //Set 9th bit of fractional to indicate 0.5C
   }
+  Serial.println("Env_Date_read:");
+  Serial.println(envData[0], HEX);
+  Serial.println(envData[1], HEX);
+  Serial.println(envData[2], HEX);
+  Serial.println(envData[03], HEX);
 
+  
   Wire.beginTransmission(CCS811_ADDR);
   Wire.write(CSS811_ENV_DATA); //We want to write our RH and temp data to the ENV register
   Wire.write(envData[0]);
@@ -412,7 +401,9 @@ void setEnvironmentalData(float relativeHumidity, float temperature)
   Wire.write(envData[2]);
   Wire.write(envData[3]);
 }
-   */
+   
+
+*/
 void setEnvironmentalData(float t, float rh)    // compensate for temperature and relative humidity
 {
   digitalWrite(WAKE, LOW);
@@ -424,6 +415,12 @@ void setEnvironmentalData(float t, float rh)    // compensate for temperature an
     _temp = (int)t - 0.5;
   _temp = _temp + 25;  // temperature high byte is stored as T+25°C so the value of byte is positive
   _rh = (int)rh + 0.5;  // this will round off the floating point to the nearest integer value
+
+  Serial.println("Env_Date_read:");
+  Serial.println(_rh, HEX);
+  Serial.println(_temp, HEX);
+
+
 
   Wire.beginTransmission(CCS811_ADDR);
   Wire.write(CSS811_ENV_DATA);
